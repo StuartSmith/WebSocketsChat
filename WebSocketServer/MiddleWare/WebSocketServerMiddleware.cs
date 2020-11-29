@@ -42,7 +42,7 @@ namespace WebSocketServer.MiddleWare
 
                     await ReceiveMessage(webSocket,async(result, buffer)=>{
                             
-                            await Task.Delay(1); 
+                            //await Task.Delay(1); 
                             
                             if(result.MessageType == WebSocketMessageType.Text)
                             {
@@ -54,8 +54,14 @@ namespace WebSocketServer.MiddleWare
                             }
                             else if(result.MessageType == WebSocketMessageType.Close)
                             {
-                                    Console.WriteLine("Received Close Message");
-                                    return;
+                                var id = _manager.GetAllSockets().FirstOrDefault(s => s.Value == webSocket).Key;
+                                
+                                _manager.GetAllSockets().TryRemove(id,out WebSocket sock);
+                                
+                                  await sock.CloseOutputAsync(result.CloseStatus.Value,result.CloseStatusDescription,CancellationToken.None);
+                                
+                                Console.WriteLine("Received Close Message");
+                                return;
                             }
                     });
                 }
@@ -95,15 +101,20 @@ namespace WebSocketServer.MiddleWare
              }
         }
 
+        
         public async Task RouteJSONMessageAsync(string Message)
         {
                var routeOb = JsonConvert.DeserializeObject<WebSocketMsg>(Message);
             
                if (Guid.TryParse(routeOb.To,out Guid GuidOutput))
                {
+                    Console.WriteLine("Targeted");
+                    var sock = _manager.GetAllSockets().FirstOrDefault(s => s.Key == routeOb.To.ToString());
+                   
+                    await  SendTextMessage(sock, routeOb.Message.ToString());
 
                }
-               else
+               else if (String.IsNullOrEmpty(routeOb.To))
                {
                 Console.WriteLine($"BroadCast {routeOb.ToString()}");
                   foreach(var sock in _manager.GetAllSockets())
@@ -126,6 +137,26 @@ namespace WebSocketServer.MiddleWare
                       }
                   }
                }
+               else
+               {
+                   var sock = _manager.GetAllSockets().FirstOrDefault(s => s.Key == routeOb.From.ToString());
+               }
+        }
+
+        private async Task SendTextMessage(KeyValuePair<string,WebSocket> sock,string Message )
+        {
+            if (sock.Value != null)
+                    {
+                        if(sock.Value.State == WebSocketState.Open)
+                        {
+                            await sock.Value.SendAsync(Encoding.UTF8.GetBytes(Message.ToString()),
+                            WebSocketMessageType.Text,true,CancellationToken.None);
+                        }
+                        else
+                        {
+                            Console.WriteLine("Socket is Closed, invalid Recipient");
+                        }
+                    }
         }
     }
 }
